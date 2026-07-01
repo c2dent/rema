@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
 import { RouterLink, RouterView } from 'vue-router';
-import { Archive, BarChart3, Boxes, ClipboardList, Database, PackagePlus, Users } from 'lucide-vue-next';
+import { Archive, BarChart3, Boxes, ClipboardList, Database, PackagePlus, Users, Warehouse } from 'lucide-vue-next';
 import { useInventoryStore } from './stores/inventory';
 
 const store = useInventoryStore();
@@ -47,6 +47,10 @@ onMounted(() => {
       <RouterLink to="/parts">
         <Archive :size="20" />
         <span>Запчасти</span>
+      </RouterLink>
+      <RouterLink to="/warehouses">
+        <Warehouse :size="20" />
+        <span>Склады</span>
       </RouterLink>
       <RouterLink to="/people">
         <Users :size="20" />

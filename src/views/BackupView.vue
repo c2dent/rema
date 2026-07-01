@@ -37,6 +37,7 @@ function exportReportCsv() {
     rows.map((row) => ({
       Запчасть: row.partName,
       Единица: row.unit,
+      Поступление: row.receipt,
       Получено: row.issue,
       Работа: row.work_usage,
       Продажа: row.private_sale,
@@ -65,7 +66,7 @@ function exportReportCsv() {
       <section class="panel backup-panel">
         <FileJson :size="26" />
         <h2>JSON-бэкап</h2>
-        <p>Сохраняет все запчасти, обходчиков, операции и настройки приложения.</p>
+        <p>Сохраняет все запчасти, склады, обходчиков, операции и настройки приложения.</p>
         <button class="button primary" type="button" @click="downloadBackup">
           <Download :size="18" />
           <span>Скачать резервную копию</span>
@@ -87,7 +88,7 @@ function exportReportCsv() {
       <section class="panel backup-panel">
         <Download :size="26" />
         <h2>CSV-отчет</h2>
-        <p>Excel-совместимый месячный отчет по всем обходчикам.</p>
+        <p>Excel-совместимый месячный отчет по всем складам и обходчикам.</p>
         <label class="field">
           <span>Месяц</span>
           <input v-model="reportMonth" type="month" />

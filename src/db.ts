@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie';
 
 export type MovementType =
+  | 'receipt'
   | 'issue'
   | 'work_usage'
   | 'private_sale'
@@ -30,12 +31,22 @@ export interface Person {
   updatedAt: string;
 }
 
+export interface Warehouse {
+  id: string;
+  name: string;
+  comment: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface StockMovement {
   id: string;
   date: string;
   type: MovementType;
   partId: string;
-  personId: string;
+  personId?: string;
+  warehouseId?: string;
   quantity: number;
   reason: string;
   comment: string;
@@ -56,10 +67,14 @@ export type NewStockMovement = Omit<StockMovement, 'id' | 'createdAt' | 'updated
 export type EditableStockMovement = Omit<StockMovement, 'createdAt' | 'updatedAt'>;
 export type NewPart = Pick<Part, 'name' | 'unit'>;
 export type NewPerson = Pick<Person, 'name' | 'phone' | 'comment'>;
+export type NewWarehouse = Pick<Warehouse, 'name' | 'comment'>;
+
+export const MAIN_WAREHOUSE_ID = 'main-warehouse';
 
 class RemaDatabase extends Dexie {
   parts!: Table<Part, string>;
   people!: Table<Person, string>;
+  warehouses!: Table<Warehouse, string>;
   stockMovements!: Table<StockMovement, string>;
   appSettings!: Table<AppSettings, string>;
 
@@ -69,6 +84,13 @@ class RemaDatabase extends Dexie {
       parts: 'id, name, isActive, updatedAt',
       people: 'id, name, isActive, updatedAt',
       stockMovements: 'id, date, type, partId, personId, updatedAt',
+      appSettings: 'id'
+    });
+    this.version(2).stores({
+      parts: 'id, name, isActive, updatedAt',
+      people: 'id, name, isActive, updatedAt',
+      warehouses: 'id, name, isActive, updatedAt',
+      stockMovements: 'id, date, type, partId, personId, warehouseId, updatedAt',
       appSettings: 'id'
     });
   }
@@ -100,4 +122,21 @@ export async function ensureSettings() {
   };
   await db.appSettings.put(settings);
   return settings;
+}
+
+export async function ensureDefaultWarehouse() {
+  const existing = await db.warehouses.get(MAIN_WAREHOUSE_ID);
+  if (existing) return existing;
+
+  const timestamp = nowIso();
+  const warehouse: Warehouse = {
+    id: MAIN_WAREHOUSE_ID,
+    name: 'Основной склад',
+    comment: 'Склад по умолчанию',
+    isActive: true,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+  await db.warehouses.put(warehouse);
+  return warehouse;
 }

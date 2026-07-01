@@ -1,9 +1,10 @@
 import { defineStore } from 'pinia';
-import { db, createId, ensureSettings, nowIso, type AppSettings, type EditableStockMovement, type NewPart, type NewPerson, type NewStockMovement, type Part, type Person, type StockMovement } from '../db';
+import { db, createId, ensureDefaultWarehouse, ensureSettings, MAIN_WAREHOUSE_ID, nowIso, type AppSettings, type EditableStockMovement, type NewPart, type NewPerson, type NewStockMovement, type NewWarehouse, type Part, type Person, type StockMovement, type Warehouse } from '../db';
 
 interface InventoryState {
   parts: Part[];
   people: Person[];
+  warehouses: Warehouse[];
   movements: StockMovement[];
   settings: AppSettings | null;
   isLoaded: boolean;
@@ -13,24 +14,29 @@ export const useInventoryStore = defineStore('inventory', {
   state: (): InventoryState => ({
     parts: [],
     people: [],
+    warehouses: [],
     movements: [],
     settings: null,
     isLoaded: false
   }),
   getters: {
     activeParts: (state) => state.parts.filter((part) => part.isActive),
-    activePeople: (state) => state.people.filter((person) => person.isActive)
+    activePeople: (state) => state.people.filter((person) => person.isActive),
+    activeWarehouses: (state) => state.warehouses.filter((warehouse) => warehouse.isActive)
   },
   actions: {
     async loadAll() {
       this.settings = await ensureSettings();
-      const [parts, people, movements] = await Promise.all([
+      await ensureDefaultWarehouse();
+      const [parts, people, warehouses, movements] = await Promise.all([
         db.parts.orderBy('name').toArray(),
         db.people.orderBy('name').toArray(),
+        db.warehouses.orderBy('name').toArray(),
         db.stockMovements.orderBy('date').reverse().toArray()
       ]);
       this.parts = parts;
       this.people = people;
+      this.warehouses = warehouses;
       this.movements = movements;
       this.isLoaded = true;
     },
@@ -78,11 +84,34 @@ export const useInventoryStore = defineStore('inventory', {
       });
       await this.loadAll();
     },
+    async addWarehouse(input: NewWarehouse) {
+      const timestamp = nowIso();
+      await db.warehouses.add({
+        id: createId(),
+        name: input.name.trim(),
+        comment: input.comment.trim(),
+        isActive: true,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      });
+      await this.loadAll();
+    },
+    async updateWarehouse(warehouse: Pick<Warehouse, 'id' | 'name' | 'comment' | 'isActive'>) {
+      await db.warehouses.update(warehouse.id, {
+        name: warehouse.name.trim(),
+        comment: warehouse.comment.trim(),
+        isActive: warehouse.isActive,
+        updatedAt: nowIso()
+      });
+      await this.loadAll();
+    },
     async addMovement(input: NewStockMovement) {
       const timestamp = nowIso();
       await db.stockMovements.add({
         ...input,
         id: createId(),
+        personId: input.personId || undefined,
+        warehouseId: input.warehouseId || MAIN_WAREHOUSE_ID,
         quantity: Number(input.quantity),
         reason: input.reason.trim(),
         comment: input.comment.trim(),
@@ -96,7 +125,8 @@ export const useInventoryStore = defineStore('inventory', {
         date: input.date,
         type: input.type,
         partId: input.partId,
-        personId: input.personId,
+        personId: input.personId || undefined,
+        warehouseId: input.warehouseId || MAIN_WAREHOUSE_ID,
         quantity: Number(input.quantity),
         reason: input.reason.trim(),
         comment: input.comment.trim(),
@@ -115,6 +145,7 @@ export const useInventoryStore = defineStore('inventory', {
         app: this.settings,
         parts: this.parts,
         people: this.people,
+        warehouses: this.warehouses,
         stockMovements: this.movements
       };
     },
@@ -123,6 +154,7 @@ export const useInventoryStore = defineStore('inventory', {
         app: AppSettings;
         parts: Part[];
         people: Person[];
+        warehouses: Warehouse[];
         stockMovements: StockMovement[];
       }>;
 
@@ -130,15 +162,24 @@ export const useInventoryStore = defineStore('inventory', {
         throw new Error('Файл резервной копии имеет неверный формат.');
       }
 
-      await db.transaction('rw', db.parts, db.people, db.stockMovements, db.appSettings, async () => {
+      await db.transaction('rw', db.parts, db.people, db.warehouses, db.stockMovements, db.appSettings, async () => {
         await Promise.all([
           db.parts.clear(),
           db.people.clear(),
+          db.warehouses.clear(),
           db.stockMovements.clear(),
           db.appSettings.clear()
         ]);
         await db.parts.bulkPut(data.parts ?? []);
         await db.people.bulkPut(data.people ?? []);
+        await db.warehouses.bulkPut(data.warehouses?.length ? data.warehouses : [{
+          id: MAIN_WAREHOUSE_ID,
+          name: 'Основной склад',
+          comment: 'Склад по умолчанию',
+          isActive: true,
+          createdAt: nowIso(),
+          updatedAt: nowIso()
+        }]);
         await db.stockMovements.bulkPut(data.stockMovements ?? []);
         await db.appSettings.put({
           id: 'main',

@@ -1,6 +1,7 @@
-import type { MovementType, Part, Person, StockMovement } from '../db';
+import { MAIN_WAREHOUSE_ID, type MovementType, type Part, type Person, type StockMovement, type Warehouse } from '../db';
 
 export const movementLabels: Record<MovementType, string> = {
+  receipt: 'Поступление на склад',
   issue: 'Выдача',
   work_usage: 'Расход по работе',
   private_sale: 'Частная продажа',
@@ -17,11 +18,12 @@ export const movementOptions = Object.entries(movementLabels).map(([value, label
   label
 }));
 
-const movementSigns: Record<MovementType, 1 | -1> = {
+const personMovementSigns: Record<MovementType, 1 | -1 | 0> = {
+  receipt: 0,
   issue: 1,
   work_usage: -1,
   private_sale: -1,
-  return: 1,
+  return: -1,
   defect: -1,
   loss: -1,
   correction_plus: 1,
@@ -37,10 +39,23 @@ export interface BalanceRow {
   isNegative: boolean;
 }
 
+export type HolderFilter = 'all' | `person:${string}` | `warehouse:${string}`;
+
+export interface HolderOption {
+  value: HolderFilter;
+  label: string;
+}
+
+export interface MovementEffect {
+  holder: HolderFilter;
+  quantity: number;
+}
+
 export interface ReportRow {
   partId: string;
   partName: string;
   unit: string;
+  receipt: number;
   issue: number;
   work_usage: number;
   private_sale: number;
@@ -52,8 +67,38 @@ export interface ReportRow {
   total: number;
 }
 
-export function signedQuantity(movement: Pick<StockMovement, 'type' | 'quantity'>) {
-  return movement.quantity * movementSigns[movement.type];
+export function movementEffects(movement: Pick<StockMovement, 'type' | 'quantity' | 'personId' | 'warehouseId'>) {
+  const effects: MovementEffect[] = [];
+  const warehouseId = movement.warehouseId || MAIN_WAREHOUSE_ID;
+
+  if (movement.type === 'receipt') {
+    effects.push({ holder: `warehouse:${warehouseId}`, quantity: movement.quantity });
+    return effects;
+  }
+
+  if (movement.type === 'issue') {
+    effects.push({ holder: `warehouse:${warehouseId}`, quantity: -movement.quantity });
+    if (movement.personId) effects.push({ holder: `person:${movement.personId}`, quantity: movement.quantity });
+    return effects;
+  }
+
+  if (movement.type === 'return') {
+    effects.push({ holder: `warehouse:${warehouseId}`, quantity: movement.quantity });
+    if (movement.personId) effects.push({ holder: `person:${movement.personId}`, quantity: -movement.quantity });
+    return effects;
+  }
+
+  const personSign = personMovementSigns[movement.type];
+  if (movement.personId && personSign !== 0) {
+    effects.push({ holder: `person:${movement.personId}`, quantity: movement.quantity * personSign });
+  }
+  return effects;
+}
+
+export function netMovementQuantity(movement: StockMovement, holder: HolderFilter = 'all') {
+  return movementEffects(movement)
+    .filter((effect) => holder === 'all' || effect.holder === holder)
+    .reduce((total, effect) => total + effect.quantity, 0);
 }
 
 export function formatDate(date: string) {
@@ -76,6 +121,10 @@ export function buildPersonLookup(people: Person[]) {
   return new Map(people.map((person) => [person.id, person]));
 }
 
+export function buildWarehouseLookup(warehouses: Warehouse[]) {
+  return new Map(warehouses.map((warehouse) => [warehouse.id, warehouse]));
+}
+
 export function partName(parts: Part[], id: string) {
   return buildPartLookup(parts).get(id)?.name ?? 'Запчасть удалена';
 }
@@ -84,12 +133,48 @@ export function personName(people: Person[], id: string) {
   return buildPersonLookup(people).get(id)?.name ?? 'Обходчик скрыт';
 }
 
-export function calculateBalances(parts: Part[], movements: StockMovement[], personId = 'all') {
+export function warehouseName(warehouses: Warehouse[], id: string) {
+  return buildWarehouseLookup(warehouses).get(id)?.name ?? 'Склад скрыт';
+}
+
+export function holderOptions(people: Person[], warehouses: Warehouse[]): HolderOption[] {
+  return [
+    { value: 'all', label: 'Все остатки' },
+    ...warehouses.map((warehouse) => ({
+      value: `warehouse:${warehouse.id}` as HolderFilter,
+      label: `Склад: ${warehouse.name}${warehouse.isActive ? '' : ' (скрыт)'}`
+    })),
+    ...people.map((person) => ({
+      value: `person:${person.id}` as HolderFilter,
+      label: `Обходчик: ${person.name}${person.isActive ? '' : ' (скрыт)'}`
+    }))
+  ];
+}
+
+export function movementImpactLabel(movement: StockMovement, people: Person[], warehouses: Warehouse[]) {
+  const warehouseId = movement.warehouseId || MAIN_WAREHOUSE_ID;
+  const warehouse = warehouseName(warehouses, warehouseId);
+  const person = movement.personId ? personName(people, movement.personId) : '';
+
+  if (movement.type === 'receipt') return `${warehouse} +${movement.quantity}`;
+  if (movement.type === 'issue') return `${warehouse} -${movement.quantity}${person ? ` · ${person} +${movement.quantity}` : ''}`;
+  if (movement.type === 'return') return `${warehouse} +${movement.quantity}${person ? ` · ${person} -${movement.quantity}` : ''}`;
+
+  const quantity = netMovementQuantity(movement);
+  return `${person || 'Без обходчика'} ${quantity > 0 ? '+' : ''}${quantity}`;
+}
+
+export function movementMatchesHolder(movement: StockMovement, holder: HolderFilter) {
+  return holder === 'all' || movementEffects(movement).some((effect) => effect.holder === holder);
+}
+
+export function calculateBalances(parts: Part[], movements: StockMovement[], holder: HolderFilter = 'all') {
   const totals = new Map<string, number>();
 
   for (const movement of movements) {
-    if (personId !== 'all' && movement.personId !== personId) continue;
-    totals.set(movement.partId, (totals.get(movement.partId) ?? 0) + signedQuantity(movement));
+    const quantity = netMovementQuantity(movement, holder);
+    if (!quantity) continue;
+    totals.set(movement.partId, (totals.get(movement.partId) ?? 0) + quantity);
   }
 
   return parts
@@ -111,7 +196,7 @@ export function buildMonthlyReport(
   parts: Part[],
   movements: StockMovement[],
   month: string,
-  personId = 'all'
+  holder: HolderFilter = 'all'
 ) {
   const rows = new Map<string, ReportRow>();
   const partLookup = buildPartLookup(parts);
@@ -125,6 +210,7 @@ export function buildMonthlyReport(
       partId,
       partName: part?.name ?? 'Запчасть удалена',
       unit: part?.unit ?? '',
+      receipt: 0,
       issue: 0,
       work_usage: 0,
       private_sale: 0,
@@ -141,18 +227,20 @@ export function buildMonthlyReport(
 
   for (const movement of movements) {
     if (!movement.date.startsWith(month)) continue;
-    if (personId !== 'all' && movement.personId !== personId) continue;
+    if (!movementMatchesHolder(movement, holder)) continue;
 
     const row = ensureRow(movement.partId);
-    if (movement.type === 'correction_plus') row.correction += movement.quantity;
+    if (movement.type === 'receipt') row.receipt += movement.quantity;
+    else if (movement.type === 'correction_plus') row.correction += movement.quantity;
     else if (movement.type === 'correction_minus') row.correction -= movement.quantity;
     else row[movement.type] += movement.quantity;
-    row.total += signedQuantity(movement);
+    row.total += netMovementQuantity(movement, holder);
   }
 
   return Array.from(rows.values())
     .map((row) => ({
       ...row,
+      receipt: roundNumber(row.receipt),
       issue: roundNumber(row.issue),
       work_usage: roundNumber(row.work_usage),
       private_sale: roundNumber(row.private_sale),

@@ -2,19 +2,20 @@
 import { computed, reactive } from 'vue';
 import { Download } from 'lucide-vue-next';
 import { useInventoryStore } from '../stores/inventory';
-import { buildMonthlyReport, currentMonthInputValue, downloadText, toCsv } from '../utils/inventory';
+import { buildMonthlyReport, currentMonthInputValue, downloadText, holderOptions, toCsv, type HolderFilter } from '../utils/inventory';
 
 const store = useInventoryStore();
 const filters = reactive({
   month: currentMonthInputValue(),
-  personId: 'all'
+  holder: 'all' as HolderFilter
 });
 
-const rows = computed(() => buildMonthlyReport(store.parts, store.movements, filters.month, filters.personId));
+const rows = computed(() => buildMonthlyReport(store.parts, store.movements, filters.month, filters.holder));
 
 const totals = computed(() =>
   rows.value.reduce(
     (acc, row) => {
+      acc.receipt += row.receipt;
       acc.issue += row.issue;
       acc.work_usage += row.work_usage;
       acc.private_sale += row.private_sale;
@@ -26,7 +27,7 @@ const totals = computed(() =>
       acc.total += row.total;
       return acc;
     },
-    { issue: 0, work_usage: 0, private_sale: 0, defect: 0, loss: 0, return: 0, correction: 0, other: 0, total: 0 }
+    { receipt: 0, issue: 0, work_usage: 0, private_sale: 0, defect: 0, loss: 0, return: 0, correction: 0, other: 0, total: 0 }
   )
 );
 
@@ -35,6 +36,7 @@ function exportCsv() {
     rows.value.map((row) => ({
       Запчасть: row.partName,
       Единица: row.unit,
+      Поступление: row.receipt,
       Получено: row.issue,
       Работа: row.work_usage,
       Продажа: row.private_sale,
@@ -68,18 +70,19 @@ function exportCsv() {
         <input v-model="filters.month" type="month" />
       </label>
       <label class="field compact">
-        <span>Обходчик</span>
-        <select v-model="filters.personId">
-          <option value="all">Все обходчики</option>
-          <option v-for="person in store.people" :key="person.id" :value="person.id">{{ person.name }}</option>
+        <span>Место</span>
+        <select v-model="filters.holder">
+          <option v-for="holder in holderOptions(store.people, store.warehouses)" :key="holder.value" :value="holder.value">
+            {{ holder.label }}
+          </option>
         </select>
       </label>
     </div>
 
     <div class="summary-strip">
       <div>
-        <span>Получено</span>
-        <strong>{{ totals.issue }}</strong>
+        <span>Поступило</span>
+        <strong>{{ totals.receipt }}</strong>
       </div>
       <div>
         <span>Расход</span>
@@ -105,6 +108,7 @@ function exportCsv() {
         <thead>
           <tr>
             <th>Запчасть</th>
+            <th>Поступление</th>
             <th>Получено</th>
             <th>Работа</th>
             <th>Продажа</th>
@@ -119,6 +123,7 @@ function exportCsv() {
         <tbody>
           <tr v-for="row in rows" :key="row.partId">
             <th>{{ row.partName }} <span>{{ row.unit }}</span></th>
+            <td>{{ row.receipt }}</td>
             <td>{{ row.issue }}</td>
             <td>{{ row.work_usage }}</td>
             <td>{{ row.private_sale }}</td>

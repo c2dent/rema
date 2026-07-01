@@ -3,7 +3,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { Edit3, Save, Trash2, X } from 'lucide-vue-next';
 import { useInventoryStore } from '../stores/inventory';
-import { currentMonthInputValue, formatDate, movementLabels, movementOptions, partName, personName, signedQuantity } from '../utils/inventory';
+import { currentMonthInputValue, formatDate, holderOptions, movementImpactLabel, movementLabels, movementMatchesHolder, movementOptions, netMovementQuantity, partName, type HolderFilter } from '../utils/inventory';
 import type { EditableStockMovement, MovementType, StockMovement } from '../db';
 
 const store = useInventoryStore();
@@ -11,7 +11,7 @@ const route = useRoute();
 
 const filters = reactive({
   month: currentMonthInputValue(),
-  personId: 'all',
+  holder: 'all' as HolderFilter,
   partId: String(route.query.partId ?? 'all'),
   type: 'all' as MovementType | 'all'
 });
@@ -29,7 +29,7 @@ watch(
 const filteredMovements = computed(() =>
   store.movements.filter((movement) => {
     if (filters.month && !movement.date.startsWith(filters.month)) return false;
-    if (filters.personId !== 'all' && movement.personId !== filters.personId) return false;
+    if (!movementMatchesHolder(movement, filters.holder)) return false;
     if (filters.partId !== 'all' && movement.partId !== filters.partId) return false;
     if (filters.type !== 'all' && movement.type !== filters.type) return false;
     return true;
@@ -68,10 +68,11 @@ async function confirmDelete() {
         <input v-model="filters.month" type="month" />
       </label>
       <label class="field compact">
-        <span>Обходчик</span>
-        <select v-model="filters.personId">
-          <option value="all">Все</option>
-          <option v-for="person in store.people" :key="person.id" :value="person.id">{{ person.name }}</option>
+        <span>Место</span>
+        <select v-model="filters.holder">
+          <option v-for="holder in holderOptions(store.people, store.warehouses)" :key="holder.value" :value="holder.value">
+            {{ holder.label }}
+          </option>
         </select>
       </label>
       <label class="field compact">
@@ -100,12 +101,12 @@ async function confirmDelete() {
         <div class="movement-main">
           <span class="pill">{{ movementLabels[movement.type] }}</span>
           <h2>{{ partName(store.parts, movement.partId) }}</h2>
-          <p>{{ formatDate(movement.date) }} · {{ personName(store.people, movement.personId) }}</p>
+          <p>{{ formatDate(movement.date) }} · {{ movementImpactLabel(movement, store.people, store.warehouses) }}</p>
           <p v-if="movement.comment" class="muted">{{ movement.comment }}</p>
         </div>
         <div class="row-actions">
-          <strong class="amount" :class="{ negative: signedQuantity(movement) < 0 }">
-            {{ signedQuantity(movement) > 0 ? '+' : '' }}{{ signedQuantity(movement) }}
+          <strong class="amount" :class="{ negative: netMovementQuantity(movement, filters.holder) < 0 }">
+            {{ netMovementQuantity(movement, filters.holder) > 0 ? '+' : '' }}{{ netMovementQuantity(movement, filters.holder) }}
           </strong>
           <button class="icon-button" type="button" title="Редактировать" @click="startEdit(movement)">
             <Edit3 :size="18" />
@@ -137,8 +138,16 @@ async function confirmDelete() {
         </label>
         <label class="field">
           <span>Обходчик</span>
-          <select v-model="editing.personId" required>
+          <select v-model="editing.personId">
+            <option value="">Без обходчика</option>
             <option v-for="person in store.people" :key="person.id" :value="person.id">{{ person.name }}</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Склад</span>
+          <select v-model="editing.warehouseId">
+            <option value="">Основной склад</option>
+            <option v-for="warehouse in store.warehouses" :key="warehouse.id" :value="warehouse.id">{{ warehouse.name }}</option>
           </select>
         </label>
         <label class="field">

@@ -3,12 +3,14 @@ import { computed, ref } from 'vue';
 import { RouterLink } from 'vue-router';
 import { AlertTriangle, History, Plus } from 'lucide-vue-next';
 import { useInventoryStore } from '../stores/inventory';
-import { calculateBalances } from '../utils/inventory';
+import { calculateBalances, holderOptions, type HolderFilter } from '../utils/inventory';
 
 const store = useInventoryStore();
-const selectedPersonId = ref('all');
+const selectedHolder = ref<HolderFilter>('all');
 
-const balances = computed(() => calculateBalances(store.parts, store.movements, selectedPersonId.value));
+const holders = computed(() => holderOptions(store.people, store.warehouses));
+const selectedHolderLabel = computed(() => holders.value.find((holder) => holder.value === selectedHolder.value)?.label ?? 'Все остатки');
+const balances = computed(() => calculateBalances(store.parts, store.movements, selectedHolder.value));
 const negativeCount = computed(() => balances.value.filter((row) => row.isNegative).length);
 </script>
 
@@ -26,12 +28,9 @@ const negativeCount = computed(() => balances.value.filter((row) => row.isNegati
 
     <div class="toolbar">
       <label class="field compact">
-        <span>Обходчик</span>
-        <select v-model="selectedPersonId">
-          <option value="all">Все обходчики</option>
-          <option v-for="person in store.people" :key="person.id" :value="person.id">
-            {{ person.name }}{{ person.isActive ? '' : ' (скрыт)' }}
-          </option>
+        <span>Остатки</span>
+        <select v-model="selectedHolder">
+          <option v-for="holder in holders" :key="holder.value" :value="holder.value">{{ holder.label }}</option>
         </select>
       </label>
     </div>
@@ -51,7 +50,7 @@ const negativeCount = computed(() => balances.value.filter((row) => row.isNegati
       <article v-for="row in balances" :key="row.partId" class="list-row stock-row" :class="{ danger: row.isNegative }">
         <div>
           <h2>{{ row.partName }}</h2>
-          <p>{{ selectedPersonId === 'all' ? 'Все обходчики' : 'Выбранный обходчик' }}</p>
+          <p>{{ selectedHolderLabel }}</p>
         </div>
         <div class="row-actions">
           <strong class="amount">{{ row.quantity }} {{ row.unit }}</strong>
