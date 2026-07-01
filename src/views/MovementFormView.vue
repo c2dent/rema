@@ -92,7 +92,7 @@ async function saveMovement() {
 
       <label class="field span-2">
         <span>Комментарий</span>
-        <textarea v-model.trim="form.comment" rows="4" placeholder="Дополнительные детали"></textarea>
+        <textarea v-model.trim="form.comment" rows="2" placeholder="Дополнительные детали"></textarea>
       </label>
 
       <p v-if="error" class="form-error">{{ error }}</p>

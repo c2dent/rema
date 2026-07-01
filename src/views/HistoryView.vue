@@ -157,7 +157,7 @@ async function confirmDelete() {
         </label>
         <label class="field span-2">
           <span>Комментарий</span>
-          <textarea v-model.trim="editing.comment" rows="3"></textarea>
+          <textarea v-model.trim="editing.comment" rows="2"></textarea>
         </label>
         <button class="button primary span-2" type="submit">
           <Save :size="18" />
