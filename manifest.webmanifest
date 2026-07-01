@@ -1,0 +1,1 @@
+{"name":"Rema","short_name":"Rema","description":"Локальный учет запчастей через журнал движений","start_url":".","display":"standalone","background_color":"#f7f4ef","theme_color":"#1f766d","lang":"en","scope":"./","orientation":"portrait","icons":[{"src":"/pwa.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}
